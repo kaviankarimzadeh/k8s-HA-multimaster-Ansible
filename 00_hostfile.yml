@@ -1,0 +1,25 @@
+---
+- name: Update hostfile
+  hosts: all_k8s
+  become: true
+  gather_facts: true
+  vars:
+    template_file: templates/etchost.j2
+  tasks:
+    - name: copy template to tmp location
+      template:
+        src: "{{ template_file }}"
+        dest: /tmp/etchost.conf
+        owner: root
+        group: root
+    
+    - name: "Append /etc/hosts with content of temporary file"
+      shell: cat /tmp/etchost.conf >> /etc/hosts
+    
+    - name: "Delete temporary file"
+      file:
+        path: /tmp/etchost.conf
+        state: absent
+
+    - name: "Append /etc/hosts with address of VIP loadbalancer"
+      shell: sudo echo "192.168.56.130 lb.local lb"  >> /etc/hosts

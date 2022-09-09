@@ -1,0 +1,18 @@
+---
+- hosts: ha_member
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Copy master token
+      copy:
+        src: ./mastertoken
+        dest: /tmp/join-command.sh
+        owner: root
+        group: root
+        mode: '0777'
+
+    - name: update token command
+      shell: sed -i '3s|$|& --apiserver-advertise-address {{ansible_eth1.ipv4.address}} |' /tmp/join-command.sh
+
+    - name: add new members to k8s cluster
+      command: sh /tmp/join-command.sh

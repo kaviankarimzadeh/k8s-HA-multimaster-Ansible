@@ -1,0 +1,36 @@
+---
+- hosts: ha_leader
+  become: true
+  gather_facts: true
+  vars:
+    cri_socket: unix:///run/containerd/containerd.sock
+    cp_endpoint: lb.local:6443
+    pod_cidr: 10.244.0.0/16
+    k8s_version: 1.21.1 
+  tasks:
+    - name: initialize the cluster
+      shell: kubeadm init --cri-socket="{{ cri_socket }}" --control-plane-endpoint "{{ cp_endpoint }}" --upload-certs --apiserver-advertise-address {{ansible_eth1.ipv4.address}} --pod-network-cidr {{ pod_cidr }} --kubernetes-version={{ k8s_version }}
+      register: token
+
+    - name: saving token info
+      copy: content={{ token.stdout }} dest=./token
+      delegate_to: localhost
+
+    - name: generate token master
+      local_action: shell sed -n 72,75p ./token > ./mastertoken
+
+    - name: generate token worker
+      local_action: shell sed -n 82,84p ./token > ./workertoken
+
+    - name: kubeconf actions directory
+      file:
+        path: /home/vagrant/.kube
+        state: directory
+
+    - name: kubeconf actions copy conf
+      copy: 
+        src: /etc/kubernetes/admin.conf 
+        dest: /home/vagrant/.kube/config 
+        owner: vagrant 
+        group: vagrant 
+        remote_src: yes

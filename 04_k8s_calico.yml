@@ -1,0 +1,29 @@
+---
+- hosts: ha_leader
+  vars:
+    default_cidr: 192.168.0.0
+    new_cidr: 10.244.0.0
+  tasks:
+    - name: restart containerd services
+      service:
+        name: containerd
+        state: restarted
+
+    - name: Download calico operator version v3.24.1 conf file
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/projectcalico/calico/v3.24.1/manifests/tigera-operator.yaml
+        dest: ./calico-operator.yaml
+
+    - name: Download calico custom-resources v3.24.1 conf file
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/projectcalico/calico/v3.24.1/manifests/custom-resources.yaml
+        dest: ./calico-cr.yaml
+    
+    - name: update cidr info with new cidr info
+      shell: sed -i "s/"{{ default_cidr }}"/"{{ new_cidr }}"/g" calico-cr.yaml
+
+    - name: Install calico pod network 1
+      command: kubectl create -f calico-operator.yaml
+
+    - name: Install calico pod network 2
+      command: kubectl create -f calico-cr.yaml

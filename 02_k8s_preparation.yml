@@ -1,0 +1,168 @@
+---
+- hosts: "masters, workers"
+  become: true
+  become_user: root
+  gather_facts: yes
+  vars:
+    k8s_version: 1.21.1
+  tasks:
+    - name: Uninstall old versions of docker, containded
+      yum:
+        name: "{{ packages }}"
+        state: absent
+      vars:
+        packages:
+        - docker
+        - docker-client
+        - docker-client-latest
+        - docker-common
+        - docker-latest
+        - docker-latest-logrotate
+        - docker-logrotate
+        - docker-engine
+        - containerd
+
+#########Necessary actions for containerd as CRI for k8s env#########
+
+    - name: modprobe configuration
+      shell: |
+              sudo modprobe overlay
+              sudo modprobe br_netfilter
+
+    - name: Set system configurations for Kubernetes networking
+      file:
+        path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+        state: "touch"
+
+    - name: Add conf for containerd
+      blockinfile:
+        path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+        block: |
+              net.bridge.bridge-nf-call-iptables = 1
+              net.ipv4.ip_forward = 1
+              net.bridge.bridge-nf-call-ip6tables = 1
+
+    - name: Apply new settings
+      command: sudo sysctl --system
+
+    - name: Create containerd config file
+      file:
+        path: "/etc/modules-load.d/containerd.conf"
+        state: "touch"
+
+    - name: Add conf for containerd
+      blockinfile:
+        path: "/etc/modules-load.d/containerd.conf"
+        block: |
+              overlay
+              br_netfilter
+
+    - name: Apply new settings again
+      command: sudo sysctl --system
+
+    - name: Install some packages
+      yum:
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+        - ca-certificates
+        - curl
+        - gnupg2
+
+    - name: Add repository
+      shell: yum-config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo
+      args:
+        creates: /etc/yum.repos.d/centos_o.repo
+
+    - name: update all packages
+      yum: name=* state=latest
+
+    - name: Install Package Dependencies
+      yum:
+        state: present
+        name: 
+          - containerd
+
+    - name: Ensure containerd config directory exists.
+      file:
+        path: /etc/containerd
+        state: directory
+
+    - name: Copying containerd conf"
+      copy:
+        src: files/containerd_config.toml
+        dest: /etc/containerd/config.toml
+
+    - name: start containerd services
+      service:
+        name: containerd
+        state: restarted
+        enabled: true
+
+#########Performing necessary actions for k8s#########
+#########SWAP#########
+
+    - name: Remove swapfile from /etc/fstab
+      mount:
+        name: "{{ item }}"
+        fstype: swap
+        state: absent
+      with_items:
+        - swap
+        - none
+
+    - name: Disable swap
+      command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+
+#########SELINUX#########
+
+    - name: Disable SELinux shell
+      shell: sudo setenforce 0
+
+    - name: Disable SELinux
+      ansible.posix.selinux:
+        state: disabled
+
+#########install kubeadm, kubelet and kubectl#########
+
+    - name: create kubernetes.repo file 
+      file:
+        path: "/etc/yum.repos.d/kubernetes.repo"
+        state: "touch"
+
+    - name: Adding yum repository for Kubernetes
+      ansible.builtin.blockinfile:
+        path: /etc/yum.repos.d/kubernetes.repo
+        block: |
+          [kubernetes]
+          name=Kubernetes
+          baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-\$basearch
+          enabled=1
+          gpgcheck=1
+          gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+
+    - name: update all packages
+      yum: name=* state=latest
+
+    - name: kubelet kubeadm kubectl
+      yum:
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+        - kubelet-{{ k8s_version }}
+        - kubeadm-{{ k8s_version }}
+        - kubectl-{{ k8s_version }}
+
+    - name: start kubelet services
+      service:
+        name: kubelet
+        state: restarted
+        enabled: true
+
+    - name: Prevent installed packages from being updated
+      shell: echo "exclude=kubelet kubeadm kubectl containerd" >> /etc/yum/yum.conf

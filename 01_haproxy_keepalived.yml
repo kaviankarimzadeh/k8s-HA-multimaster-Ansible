@@ -1,0 +1,83 @@
+---
+- name: HAProxy installation
+  hosts: lb
+  become: true
+  gather_facts: false
+  vars:
+    haproxy_conf: /etc/haproxy/haproxy.cfg
+    keepalived_conf: /etc/keepalived/keepalived.conf
+    haproxy_file: files/haproxy.cfg
+    keepalived1_file: files/keepalived_1.conf
+    keepalived2_file: files/keepalived_2.conf
+  tasks:
+    - name: update all packages
+      yum: name=* state=latest
+
+    - name: Install Packages
+      yum:
+        state: present
+        name: 
+          - haproxy
+          - keepalived
+          - psmisc
+
+    - name: Stop haproxy service
+      service:
+        name: haproxy
+        state: stopped
+
+    - name: Set setsebool -P haproxy_connect_any=1
+      command: setsebool -P haproxy_connect_any=1
+
+    - name: Copying haproxy conf "{{ haproxy_conf }}"
+      copy:
+        src: "{{ haproxy_file }}"
+        dest: "{{ haproxy_conf }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - restart_haproxy
+
+    - name: Copying keepalived conf "{{ keepalived_conf }} lb01"
+      delegate_to: lb01
+      copy:
+        src: "{{ keepalived1_file }}"
+        dest: "{{ keepalived_conf }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - restart_keepalived
+
+    - name: Copying keepalived conf "{{ keepalived_conf }} lb02"
+      delegate_to: lb02
+      copy:
+        src: "{{ keepalived2_file }}"
+        dest: "{{ keepalived_conf }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - restart_keepalived
+
+    - name: Start haproxy services
+      service:
+        name: haproxy
+        state: started
+        enabled: true
+
+    - name: Start keepalived services
+      service:
+        name: keepalived
+        state: started
+        enabled: true
+
+    - name: Prevent containerd packages from being updated
+      shell: echo "exclude=keepalived haproxy" >> /etc/yum/yum.conf
+
+  handlers:
+    - name: restart_haproxy
+      service: name=haproxy state=restarted
+    - name: restart_keepalived
+      service: name=keepalived state=restarted

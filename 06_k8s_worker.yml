@@ -1,0 +1,15 @@
+---
+- hosts: workers
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Copy master token
+      copy:
+        src: ./workertoken
+        dest: /tmp/join-command.sh
+        owner: root
+        group: root
+        mode: '0777'
+
+    - name: add workers to k8s cluster
+      command: sh /tmp/join-command.sh
