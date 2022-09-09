@@ -6,7 +6,8 @@
 
 3. Below you can perform steps for ansible:
 
-#installing Python3.8.12 (optional)
+
+installing Python3.8.12 (optional)
 
 {
     sudo yum -y groupinstall "Development Tools"
@@ -20,7 +21,7 @@
     python3.8 --version
 }
 
-#create venv for projct
+create venv for projct
 
 {
     cd
